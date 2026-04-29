@@ -1,18 +1,18 @@
 # core/cognitive_bridge.py
 
 class CognitiveBridge:
-    def __init__(self, memory, interaction):
-        self.memory = memory
+    def __init__(self, interaction):
         self.interaction = interaction
 
     def execute(self, action, target, state):
-        if action == "idle":
-            state["current_intent"] = None
-            return
+        """
+        Converts cognitive intent → physical system
+        """
 
         state["current_intent"] = action
 
-        for obj in self.interaction.objects:
-            if obj.id == target:
-                self.interaction.active_action = action
-                return
+        if action == "idle":
+            return False
+
+        # delegate to interaction layer
+        return self.interaction.execute(action, target, state)
