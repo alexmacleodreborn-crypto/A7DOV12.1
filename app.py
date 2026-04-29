@@ -7,12 +7,13 @@ import sys
 import os
 
 # =========================
-# PATH FIX (IMPORTANT)
+# PATH FIX
 # =========================
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(ROOT)
 
 # =========================
-# IMPORT CORE SYSTEM
+# IMPORT CORE
 # =========================
 from core.state import state
 from core.memory import Memory
@@ -20,23 +21,39 @@ from core.perception_adapter import perceive
 from core.action_selector import select_action
 from core.cognitive_bridge import CognitiveBridge
 from core.feedback_processor import process_feedback
-from chassis.interaction_system import InteractionSystem
+
+# =========================
+# IMPORT GRID INTERACTION (IMPORTANT)
+# =========================
+from chassis.grid_interaction import GridInteractionSystem
 
 # =========================
 # INITIALISE SYSTEM
 # =========================
 memory = Memory()
-interaction = InteractionSystem()
+interaction = GridInteractionSystem()
 bridge = CognitiveBridge(interaction)
 
 # seed memory
 memory.link("self", "cube")
 
 # =========================
-# STREAMLIT UI SETUP
+# INIT STATE (SAFE RESET)
+# =========================
+state["objects"] = [
+    {"id": "cube", "pos": [2, 2], "held": False}
+]
+
+state["agent_pos"] = [5, 5]
+state["atp"] = 1.0
+state["coherence"] = 1.0
+state["cycle"] = 0
+
+# =========================
+# STREAMLIT UI
 # =========================
 st.set_page_config(layout="wide")
-st.title("A7DO — Live Organism Dashboard")
+st.title("A7DO — Live Organism")
 
 col1, col2, col3 = st.columns(3)
 
@@ -48,7 +65,7 @@ grid_box = st.empty()
 log_box = st.empty()
 
 # =========================
-# GRID RENDER FUNCTION
+# GRID RENDER
 # =========================
 def render_grid(state):
     size = state["grid_size"]
@@ -101,13 +118,14 @@ if run:
         state["atp"] = min(1.0, state["atp"] + 0.01)
 
         # =========================
-        # 6. STATE UPDATE
+        # 6. UPDATE STATE
         # =========================
         state["cycle"] += 1
         state["last_action_success"] = success
+        state["current_intent"] = action
 
         # =========================
-        # UI — VITALS
+        # UI: VITALS
         # =========================
         with vitals_box.container():
             st.subheader("Vitals")
@@ -118,7 +136,7 @@ if run:
             st.write("Success:", success)
 
         # =========================
-        # UI — MEMORY
+        # UI: MEMORY
         # =========================
         with memory_box.container():
             st.subheader("Memory")
@@ -128,7 +146,7 @@ if run:
                 )
 
         # =========================
-        # UI — ENVIRONMENT
+        # UI: ENVIRONMENT
         # =========================
         with env_box.container():
             st.subheader("Environment")
@@ -136,7 +154,7 @@ if run:
                 st.write(obj)
 
         # =========================
-        # UI — GRID
+        # UI: GRID
         # =========================
         grid = render_grid(state)
         grid_box.image(grid, width=300, clamp=True)
