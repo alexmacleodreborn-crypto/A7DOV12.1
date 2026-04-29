@@ -1,106 +1,150 @@
+# app.py
+
 import streamlit as st
 import time
 import numpy as np
+import sys
+import os
 
-# ==== IMPORT YOUR MODULES ====
-from memory import Memory
-from decision import decide
-from interaction import execute
-from state import state
+# =========================
+# PATH FIX (IMPORTANT)
+# =========================
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# =============================
+# =========================
+# IMPORT CORE SYSTEM
+# =========================
+from core.state import state
+from core.memory import Memory
+from core.perception_adapter import perceive
+from core.action_selector import select_action
+from core.cognitive_bridge import CognitiveBridge
+from core.feedback_processor import process_feedback
+
+from chassis.interaction_system import InteractionSystem
+
+# =========================
 # INITIALISE SYSTEM
-# =============================
-
+# =========================
 memory = Memory()
+interaction = InteractionSystem()
+bridge = CognitiveBridge(interaction)
 
-# seed
+# seed memory
 memory.link("self", "cube")
 
-state["objects"] = [
-    {"id": "cube", "pos": [0, 0], "held": False}
-]
-
-# =============================
-# STREAMLIT UI
-# =============================
-
+# =========================
+# STREAMLIT UI SETUP
+# =========================
 st.set_page_config(layout="wide")
 st.title("A7DO — Live Organism Dashboard")
 
 col1, col2, col3 = st.columns(3)
 
-# placeholders
 vitals_box = col1.empty()
 memory_box = col2.empty()
 env_box = col3.empty()
 
+grid_box = st.empty()
 log_box = st.empty()
 
-# =============================
-# MAIN LOOP
-# =============================
+# =========================
+# GRID RENDER FUNCTION
+# =========================
+def render_grid(state):
+    size = state["grid_size"]
+    grid = np.zeros((size, size))
 
+    # objects
+    for obj in state["objects"]:
+        x, y = obj["pos"]
+        grid[y][x] = 0.5
+
+    # agent
+    ax, ay = state["agent_pos"]
+    grid[ay][ax] = 1.0
+
+    return grid
+
+# =========================
+# MAIN LOOP
+# =========================
 run = st.button("Start Simulation")
 
 if run:
-
-    cycle = 0
 
     while True:
 
         # =========================
         # 1. PERCEPTION
         # =========================
-        perceived = [obj["id"] for obj in state["objects"]]
-
-        for obj in perceived:
-            memory.get_or_create(obj)
-            memory.link("self", obj)
+        perceive(state, memory)
 
         # =========================
         # 2. DECISION
         # =========================
-        action, target = decide(memory, state)
-        state["current_intent"] = action
+        action, target = select_action(memory, state)
 
         # =========================
         # 3. EXECUTION
         # =========================
-        execute(action, target, state, memory)
+        success = bridge.execute(action, target, state)
 
         # =========================
-        # 4. DECAY + RECOVERY
+        # 4. FEEDBACK
+        # =========================
+        process_feedback(success, action, target, memory, state)
+
+        # =========================
+        # 5. DECAY + RECOVERY
         # =========================
         memory.decay()
         state["atp"] = min(1.0, state["atp"] + 0.01)
 
         # =========================
-        # 5. UI UPDATE
+        # 6. STATE UPDATE
         # =========================
+        state["cycle"] += 1
+        state["last_action_success"] = success
 
-        # VITALS
+        # =========================
+        # UI — VITALS
+        # =========================
         with vitals_box.container():
             st.subheader("Vitals")
-            st.write("Cycle:", cycle)
+            st.write("Cycle:", state["cycle"])
             st.write("ATP:", round(state["atp"], 2))
             st.write("Coherence:", round(state["coherence"], 2))
-            st.write("Intent:", state["current_intent"])
+            st.write("Intent:", action)
+            st.write("Success:", success)
 
-        # MEMORY
+        # =========================
+        # UI — MEMORY
+        # =========================
         with memory_box.container():
             st.subheader("Memory")
             for name, node in memory.nodes.items():
-                st.write(f"{name} | V={round(node.voltage,2)} | links={len(node.links)}")
+                st.write(
+                    f"{name} | V={round(node.voltage,2)} | links={len(node.links)}"
+                )
 
-        # ENVIRONMENT
+        # =========================
+        # UI — ENVIRONMENT
+        # =========================
         with env_box.container():
             st.subheader("Environment")
             for obj in state["objects"]:
                 st.write(obj)
 
-        # LOG
-        log_box.write(f"Action: {action} → Target: {target}")
+        # =========================
+        # UI — GRID
+        # =========================
+        grid = render_grid(state)
+        grid_box.image(grid, width=300, clamp=True)
 
-        time.sleep(0.5)
-        cycle += 1
+        # =========================
+        # LOG
+        # =========================
+        log_box.write(f"{action} → {target}")
+
+        time.sleep(0.3)
