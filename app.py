@@ -7,13 +7,13 @@ import sys
 import os
 
 # =========================
-# PATH FIX
+# PATH FIX (CRITICAL)
 # =========================
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(ROOT)
 
 # =========================
-# IMPORT CORE
+# IMPORT CORE SYSTEM
 # =========================
 from core.state import state
 from core.memory import Memory
@@ -23,7 +23,7 @@ from core.cognitive_bridge import CognitiveBridge
 from core.feedback_processor import process_feedback
 
 # =========================
-# IMPORT GRID INTERACTION (IMPORTANT)
+# IMPORT INTERACTION SYSTEM
 # =========================
 from chassis.grid_interaction import GridInteractionSystem
 
@@ -38,22 +38,30 @@ bridge = CognitiveBridge(interaction)
 memory.link("self", "cube")
 
 # =========================
-# INIT STATE (SAFE RESET)
+# RESET STATE (SAFE INIT)
 # =========================
 state["objects"] = [
     {"id": "cube", "pos": [2, 2], "held": False}
 ]
 
-state["agent_pos"] = [5, 5]
+state["agent_pos"] = [7, 7]
+
+state["obstacles"] = [
+    [4, 4], [4, 5], [4, 6],
+    [5, 6], [6, 6]
+]
+
+state["grid_size"] = 10
 state["atp"] = 1.0
 state["coherence"] = 1.0
 state["cycle"] = 0
+state["held_object"] = None
 
 # =========================
-# STREAMLIT UI
+# STREAMLIT UI SETUP
 # =========================
 st.set_page_config(layout="wide")
-st.title("A7DO — Live Organism")
+st.title("A7DO — Live Organism (Pathfinding Enabled)")
 
 col1, col2, col3 = st.columns(3)
 
@@ -65,11 +73,15 @@ grid_box = st.empty()
 log_box = st.empty()
 
 # =========================
-# GRID RENDER
+# GRID RENDER FUNCTION
 # =========================
 def render_grid(state):
     size = state["grid_size"]
     grid = np.zeros((size, size))
+
+    # obstacles
+    for ox, oy in state["obstacles"]:
+        grid[oy][ox] = 0.2
 
     # objects
     for obj in state["objects"]:
@@ -83,10 +95,13 @@ def render_grid(state):
     return grid
 
 # =========================
-# MAIN LOOP
+# CONTROL
 # =========================
 run = st.button("Start Simulation")
 
+# =========================
+# MAIN LOOP
+# =========================
 if run:
 
     while True:
@@ -150,14 +165,21 @@ if run:
         # =========================
         with env_box.container():
             st.subheader("Environment")
+
+            st.write("Agent Position:", state["agent_pos"])
+            st.write("Held Object:", state["held_object"])
+
+            st.write("Objects:")
             for obj in state["objects"]:
                 st.write(obj)
 
+            st.write("Obstacles:", state["obstacles"])
+
         # =========================
-        # UI: GRID
+        # UI: GRID VISUAL
         # =========================
         grid = render_grid(state)
-        grid_box.image(grid, width=300, clamp=True)
+        grid_box.image(grid, width=350, clamp=True)
 
         # =========================
         # LOG
