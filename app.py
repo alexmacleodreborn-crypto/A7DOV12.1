@@ -1,189 +1,130 @@
 # app.py
 
 import streamlit as st
-import time
 import numpy as np
 import sys
 import os
 
-# =========================
-# PATH FIX (CRITICAL)
-# =========================
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(ROOT)
 
-# =========================
-# IMPORT CORE SYSTEM
-# =========================
 from core.state import state
 from core.memory import Memory
 from core.perception_adapter import perceive
 from core.action_selector import select_action
 from core.cognitive_bridge import CognitiveBridge
 from core.feedback_processor import process_feedback
-
-# =========================
-# IMPORT INTERACTION SYSTEM
-# =========================
 from chassis.grid_interaction import GridInteractionSystem
 
 # =========================
-# INITIALISE SYSTEM
+# INIT (ONLY ONCE)
 # =========================
-memory = Memory()
-interaction = GridInteractionSystem()
-bridge = CognitiveBridge(interaction)
+if "initialised" not in st.session_state:
 
-# seed memory
-memory.link("self", "cube")
+    st.session_state.initialised = True
 
-# =========================
-# RESET STATE (SAFE INIT)
-# =========================
-state["objects"] = [
-    {"id": "cube", "pos": [2, 2], "held": False}
-]
+    st.session_state.memory = Memory()
+    st.session_state.interaction = GridInteractionSystem()
+    st.session_state.bridge = CognitiveBridge(st.session_state.interaction)
 
-state["agent_pos"] = [7, 7]
+    st.session_state.memory.link("self", "cube")
 
-state["obstacles"] = [
-    [4, 4], [4, 5], [4, 6],
-    [5, 6], [6, 6]
-]
+    state["objects"] = [
+        {"id": "cube", "pos": [2, 2], "held": False}
+    ]
 
-state["grid_size"] = 10
-state["atp"] = 1.0
-state["coherence"] = 1.0
-state["cycle"] = 0
-state["held_object"] = None
+    state["agent_pos"] = [7, 7]
+
+    state["obstacles"] = [
+        [4, 4], [4, 5], [4, 6],
+        [5, 6], [6, 6]
+    ]
+
+    state["grid_size"] = 10
+    state["cycle"] = 0
 
 # =========================
-# STREAMLIT UI SETUP
-# =========================
-st.set_page_config(layout="wide")
-st.title("A7DO — Live Organism (Pathfinding Enabled)")
-
-col1, col2, col3 = st.columns(3)
-
-vitals_box = col1.empty()
-memory_box = col2.empty()
-env_box = col3.empty()
-
-grid_box = st.empty()
-log_box = st.empty()
-
-# =========================
-# GRID RENDER FUNCTION
+# GRID RENDER
 # =========================
 def render_grid(state):
-    size = state["grid_size"]
-    grid = np.zeros((size, size))
+    grid = np.zeros((state["grid_size"], state["grid_size"]))
 
-    # obstacles
     for ox, oy in state["obstacles"]:
         grid[oy][ox] = 0.2
 
-    # objects
     for obj in state["objects"]:
         x, y = obj["pos"]
         grid[y][x] = 0.5
 
-    # agent
     ax, ay = state["agent_pos"]
     grid[ay][ax] = 1.0
 
     return grid
 
 # =========================
-# CONTROL
+# UI
 # =========================
-run = st.button("Start Simulation")
+st.title("A7DO — Live Organism")
+
+col1, col2, col3 = st.columns(3)
+
+step = st.button("Step")
+auto = st.checkbox("Auto Run")
 
 # =========================
-# MAIN LOOP
+# SINGLE STEP FUNCTION
 # =========================
-if run:
+def run_step():
 
-    while True:
+    memory = st.session_state.memory
+    bridge = st.session_state.bridge
 
-        # =========================
-        # 1. PERCEPTION
-        # =========================
-        perceive(state, memory)
+    perceive(state, memory)
 
-        # =========================
-        # 2. DECISION
-        # =========================
-        action, target = select_action(memory, state)
+    action, target = select_action(memory, state)
 
-        # =========================
-        # 3. EXECUTION
-        # =========================
-        success = bridge.execute(action, target, state)
+    success = bridge.execute(action, target, state)
 
-        # =========================
-        # 4. FEEDBACK
-        # =========================
-        process_feedback(success, action, target, memory, state)
+    process_feedback(success, action, target, memory, state)
 
-        # =========================
-        # 5. DECAY + RECOVERY
-        # =========================
-        memory.decay()
-        state["atp"] = min(1.0, state["atp"] + 0.01)
+    memory.decay()
+    state["atp"] = min(1.0, state["atp"] + 0.01)
 
-        # =========================
-        # 6. UPDATE STATE
-        # =========================
-        state["cycle"] += 1
-        state["last_action_success"] = success
-        state["current_intent"] = action
+    state["cycle"] += 1
+    state["current_intent"] = action
+    state["last_action_success"] = success
 
-        # =========================
-        # UI: VITALS
-        # =========================
-        with vitals_box.container():
-            st.subheader("Vitals")
-            st.write("Cycle:", state["cycle"])
-            st.write("ATP:", round(state["atp"], 2))
-            st.write("Coherence:", round(state["coherence"], 2))
-            st.write("Intent:", action)
-            st.write("Success:", success)
+# =========================
+# EXECUTION CONTROL
+# =========================
+if step:
+    run_step()
 
-        # =========================
-        # UI: MEMORY
-        # =========================
-        with memory_box.container():
-            st.subheader("Memory")
-            for name, node in memory.nodes.items():
-                st.write(
-                    f"{name} | V={round(node.voltage,2)} | links={len(node.links)}"
-                )
+if auto:
+    run_step()
+    st.rerun()
 
-        # =========================
-        # UI: ENVIRONMENT
-        # =========================
-        with env_box.container():
-            st.subheader("Environment")
+# =========================
+# UI OUTPUT
+# =========================
 
-            st.write("Agent Position:", state["agent_pos"])
-            st.write("Held Object:", state["held_object"])
+with col1:
+    st.subheader("Vitals")
+    st.write("Cycle:", state["cycle"])
+    st.write("ATP:", round(state["atp"], 2))
+    st.write("Coherence:", round(state["coherence"], 2))
+    st.write("Intent:", state["current_intent"])
+    st.write("Success:", state["last_action_success"])
 
-            st.write("Objects:")
-            for obj in state["objects"]:
-                st.write(obj)
+with col2:
+    st.subheader("Memory")
+    for name, node in st.session_state.memory.nodes.items():
+        st.write(f"{name} | V={round(node.voltage,2)}")
 
-            st.write("Obstacles:", state["obstacles"])
+with col3:
+    st.subheader("Environment")
+    st.write("Agent:", state["agent_pos"])
+    st.write("Obstacles:", state["obstacles"])
+    st.write("Objects:", state["objects"])
 
-        # =========================
-        # UI: GRID VISUAL
-        # =========================
-        grid = render_grid(state)
-        grid_box.image(grid, width=350, clamp=True)
-
-        # =========================
-        # LOG
-        # =========================
-        log_box.write(f"{action} → {target}")
-
-        time.sleep(0.3)
+st.image(render_grid(state), width=350)
