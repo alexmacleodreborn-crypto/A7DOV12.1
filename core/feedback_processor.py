@@ -10,10 +10,12 @@ def process_feedback(success, action, target, memory, state):
         # reinforce success
         memory.link("self", target)
         node.voltage += 0.2
+
         state["coherence"] = min(1.0, state["coherence"] + 0.02)
+
     else:
         # penalise failure
         if target in node.links:
-            node.links[target] *= 1.1  # increase resistance
+            node.links[target] *= 1.1
 
-        state["coherence"] *= 0.95
+        state["coherence"] *= 0.98
