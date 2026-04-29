@@ -1,5 +1,6 @@
 # chassis/grid_interaction.py
 
+from core.movement import get_next_step
 import numpy as np
 
 
@@ -7,29 +8,7 @@ def distance(a, b):
     return np.linalg.norm(np.array(a) - np.array(b))
 
 
-def move_towards(current, target):
-    current = np.array(current)
-    target = np.array(target)
-
-    direction = target - current
-
-    if np.linalg.norm(direction) < 0.01:
-        return current.tolist()
-
-    step = direction / np.linalg.norm(direction)
-    new_pos = current + step
-
-    return new_pos.round().astype(int).tolist()
-
-
 class GridInteractionSystem:
-    """
-    Lightweight interaction system for dashboard simulation
-    (does NOT require skeleton/muscles)
-    """
-
-    def __init__(self):
-        pass
 
     def execute(self, action, target, state):
 
@@ -50,12 +29,13 @@ class GridInteractionSystem:
 
         dist = distance(agent_pos, obj_pos)
 
-        # MOVE FIRST
+        # 🟩 PATHFINDING MOVEMENT
         if dist > 1:
-            state["agent_pos"] = move_towards(agent_pos, obj_pos)
+            next_step = get_next_step(state, obj_pos)
+            state["agent_pos"] = list(next_step)
             return False
 
-        # INTERACT
+        # 🟩 INTERACT
         obj["held"] = True
         state["held_object"] = obj["id"]
         state["atp"] -= 0.05
