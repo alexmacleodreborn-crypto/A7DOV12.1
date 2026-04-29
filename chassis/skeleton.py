@@ -2,75 +2,62 @@
 
 import numpy as np
 from .bone import Bone
-from .registry import create_base_skeleton
-from .growth import structural_growth
-
+from .registry import create_skeleton_registry
+from .growth import global_structural_growth
 
 class Skeleton:
     def __init__(self):
         self.bones = {}
         self.time = 0
-        self.scale_factor = 1.0
 
         self._build()
 
     def _build(self):
-        base = create_base_skeleton()
-
-        for b in base:
+        for b in create_skeleton_registry():
             bone = Bone(
                 bone_id=b["id"],
                 name=b["name"],
                 parent_id=b["parent"],
                 start=b["start"],
                 end=b["end"],
+                development=b["dev"]
             )
             self.bones[bone.id] = bone
 
     def update(self, t):
-        """
-        Main update loop (called every frame / heartbeat)
-        """
         self.time = t
-
-        new_scale = structural_growth(t)
-
-        # scale delta (important: avoid compounding)
-        if self.scale_factor == 0:
-            ratio = 1
-        else:
-            ratio = new_scale / self.scale_factor
+        global_scale = global_structural_growth(t)
 
         for bone in self.bones.values():
-            bone.scale(ratio)
-
-        self.scale_factor = new_scale
+            bone.update(t, global_scale)
 
     def center_of_mass(self):
         total_mass = 0
-        weighted_sum = np.zeros(3)
+        weighted = np.zeros(3)
 
         for bone in self.bones.values():
-            m = bone.mass
-            c = bone.center()
+            if not bone.exists:
+                continue
 
-            weighted_sum += c * m
+            m = bone.mass
+            weighted += bone.center() * m
             total_mass += m
 
-        return weighted_sum / total_mass if total_mass > 0 else weighted_sum
+        return weighted / total_mass if total_mass > 0 else weighted
 
     def export_state(self):
         return {
+            "time": self.time,
             "bones": [
                 {
                     "id": b.id,
+                    "exists": b.exists,
+                    "controllable": b.controllable,
                     "start": b.start.tolist(),
                     "end": b.end.tolist(),
-                    "mass": b.mass,
+                    "mass": b.mass
                 }
                 for b in self.bones.values()
             ],
-            "center_of_mass": self.center_of_mass().tolist(),
-            "scale": self.scale_factor,
-            "time": self.time,
+            "center_of_mass": self.center_of_mass().tolist()
         }
