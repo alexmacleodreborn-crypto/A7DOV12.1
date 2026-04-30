@@ -1,3 +1,5 @@
+# app.py
+
 import copy
 import sys
 import time
@@ -28,15 +30,16 @@ from chassis.action_executor import ActionExecutor
 from chassis.interaction_system import InteractionSystem
 
 
-st.set_page_config(page_title="A7DOV12.1 Integrated App", layout="wide")
-st.title("A7DOV12.1 – Integrated Bio/Cognitive/Chassis Simulation")
+st.set_page_config(page_title="A7DOV12.1", layout="wide")
+st.title("A7DOV12.1 – Integrated Simulation")
 
 
-def init_session():
+# -------------------------
+# INIT
+# -------------------------
+def init():
     if "organism" not in st.session_state:
         st.session_state.organism = Organism()
-    if "state" not in st.session_state:
-        st.session_state.state = copy.deepcopy(base_state)
 
     if "state" not in st.session_state:
         st.session_state.state = copy.deepcopy(base_state)
@@ -45,16 +48,6 @@ def init_session():
         m = Memory()
         m.get_or_create("self")
         st.session_state.memory = m
-    if "bridge" not in st.session_state:
-        st.session_state.bridge = CognitiveBridge(GridInteractionSystem())
-    if "skeleton" not in st.session_state:
-        st.session_state.skeleton = Skeleton()
-    if "muscles" not in st.session_state:
-        st.session_state.muscles = MuscularSystem(st.session_state.skeleton)
-    if "physics" not in st.session_state:
-        st.session_state.physics = PhysicsEngine(st.session_state.skeleton, st.session_state.muscles)
-    if "physical_object" not in st.session_state:
-        st.session_state.physical_object = Object("cube", [2.0, 2.0, 0.0], mass=1.2)
 
     if "bridge" not in st.session_state:
         st.session_state.bridge = CognitiveBridge(GridInteractionSystem())
@@ -71,18 +64,24 @@ def init_session():
             st.session_state.muscles,
         )
 
-    if "physical_object" not in st.session_state:
-        st.session_state.physical_object = Object("cube", [2.0, 2.0, 0.0], mass=1.2)
+    if "object" not in st.session_state:
+        st.session_state.object = Object("cube", [2.0, 2.0, 0.0], mass=1.2)
 
-    if "physical_interaction" not in st.session_state:
-        itx = InteractionSystem(st.session_state.skeleton, st.session_state.muscles)
-        executor = ActionExecutor(st.session_state.skeleton, st.session_state.muscles)
+    if "interaction" not in st.session_state:
+        itx = InteractionSystem(
+            st.session_state.skeleton,
+            st.session_state.muscles,
+        )
+        executor = ActionExecutor(
+            st.session_state.skeleton,
+            st.session_state.muscles,
+        )
         itx.set_executor(executor)
-        itx.add_object(st.session_state.physical_object)
-        st.session_state.physical_interaction = itx
+        itx.add_object(st.session_state.object)
+        st.session_state.interaction = itx
 
 
-init_session()
+init()
 
 org = st.session_state.organism
 state = st.session_state.state
@@ -91,9 +90,13 @@ bridge = st.session_state.bridge
 skeleton = st.session_state.skeleton
 muscles = st.session_state.muscles
 physics = st.session_state.physics
-physical_obj = st.session_state.physical_object
-physical_itx = st.session_state.physical_interaction
+obj = st.session_state.object
+interaction = st.session_state.interaction
 
+
+# -------------------------
+# UI
+# -------------------------
 c1, c2, c3, c4 = st.columns(4)
 steps = c1.slider("Steps", 1, 60, 10)
 dt = c2.slider("dt", 0.01, 0.25, 0.1)
@@ -101,45 +104,60 @@ activate_muscles = c3.checkbox("Activate arm muscles", True)
 auto_run = c4.checkbox("Auto run", True)
 
 run_once = st.button("Run simulation")
-col1, col2, col3 = st.columns(3)
-steps = col1.slider("Steps", 1, 60, 10)
-dt = col2.slider("dt", 0.01, 0.25, 0.1)
-activate_muscles = col3.checkbox("Activate arm muscles", True)
-
-run = st.button("Run simulation")
 
 
-def run_cycle(dt_value: float):
-    org.update(dt_value)
+# -------------------------
+# MAIN LOOP
+# -------------------------
+def run_cycle(dt):
+    # --- organism growth ---
+    org.update(dt)
 
+    # --- cognition ---
     perceive(state, memory)
     action, target = select_action(memory, state)
     success = bridge.execute(action, target, state)
     process_feedback(success, action, target, memory, state)
 
+    # --- skeleton ---
     t = org.time * 10.0
     skeleton.update(t)
 
+    # --- muscles ---
     if activate_muscles:
         muscles.activate_group(["bicep_left", "bicep_right"], 0.65)
 
     muscles.update(t, state)
-    physics.update(dt_value, state)
 
-    physical_obj.update(dt_value)
-    physical_itx.update(state)
+    # --- physics (NOW DRIVES EVERYTHING) ---
+    physics.update(dt, state)
 
+    # --- object ---
+    obj.update(dt)
+
+    # --- interaction (NOW HAS ACCESS TO PHYSICS) ---
+    interaction.update(state)
+
+    # --- state ---
     state["cycle"] += 1
     state["last_action_success"] = success
 
 
+# -------------------------
+# RUN
+# -------------------------
 if run_once or auto_run:
     for _ in range(steps if run_once else 1):
         run_cycle(dt)
 
+
+# -------------------------
+# OUTPUT
+# -------------------------
 left, right = st.columns(2)
+
 with left:
-    st.subheader("Cognitive + organism state")
+    st.subheader("Cognitive + organism")
     st.json({
         "time": round(org.time, 2),
         "cells": len(org.cells),
@@ -148,134 +166,51 @@ with left:
         "coherence": round(state["coherence"], 3),
         "atp": round(state["atp"], 3),
         "cycle": state["cycle"],
-        "last_action_success": state["last_action_success"],
-        "current_intent": state.get("current_intent"),
     })
-    st.write("Memory nodes:", list(memory.nodes.keys()))
 
 with right:
-    st.subheader("Skeleton + physics + muscles")
+    st.subheader("Physics")
     st.json({
         "center_of_mass": state.get("center_of_mass"),
         "stable": state.get("stable"),
-        "physical_object": {
-            "id": physical_obj.id,
-            "held": physical_obj.held,
-            "position": physical_obj.position.round(3).tolist(),
+        "object": {
+            "held": obj.held,
+            "position": obj.position.round(3).tolist(),
         },
-        "chassis_action": physical_itx.active_action,
+        "action": interaction.active_action,
     })
-    st.dataframe(muscles.export_state()["muscles"], use_container_width=True)
 
-st.subheader("Visualizations")
-fig, axes = plt.subplots(1, 2, figsize=(13, 5))
 
+# -------------------------
+# VISUAL
+# -------------------------
+fig, ax = plt.subplots(figsize=(6, 6))
+
+# cells
 if org.cells:
     cells = np.array([c.position for c in org.cells])
-    axes[0].scatter(cells[:, 0], cells[:, 1], s=6, alpha=0.25, label="cells")
-axes[0].scatter(state["agent_pos"][0], state["agent_pos"][1], s=80, marker="x", label="agent")
-for obj in state["objects"]:
-    axes[0].scatter(obj["pos"][0], obj["pos"][1], s=80, marker="s", label=f"obj:{obj['id']}")
-for ox, oy in state["obstacles"]:
-    axes[0].scatter(ox, oy, s=50, marker="s", alpha=0.5)
-if run:
-    for _ in range(steps):
-        run_cycle(dt)
+    ax.scatter(cells[:, 0], cells[:, 1], s=5, alpha=0.2)
 
-
-left, right = st.columns(2)
-
-with left:
-    st.subheader("Cognitive + organism state")
-    st.json(
-        {
-            "time": round(org.time, 2),
-            "cells": len(org.cells),
-            "agent_pos": state["agent_pos"],
-            "held_object": state.get("held_object"),
-            "coherence": round(state["coherence"], 3),
-            "atp": round(state["atp"], 3),
-            "cycle": state["cycle"],
-            "last_action_success": state["last_action_success"],
-            "current_intent": state.get("current_intent"),
-        }
-    )
-
-    st.write("Memory nodes:", list(memory.nodes.keys()))
-
-with right:
-    st.subheader("Skeleton + physics state")
-    st.json(
-        {
-            "center_of_mass": state.get("center_of_mass"),
-            "stable": state.get("stable"),
-            "physical_object": {
-                "id": physical_obj.id,
-                "held": physical_obj.held,
-                "position": physical_obj.position.round(3).tolist(),
-            },
-            "chassis_action": physical_itx.active_action,
-        }
-    )
-
-
-st.subheader("Visualizations")
-fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-# Cells + agent/object map (x,y)
-if org.cells:
-    cells = np.array([c.position for c in org.cells])
-    axes[0].scatter(cells[:, 0], cells[:, 1], s=6, alpha=0.25, label="cells")
-
-axes[0].scatter(state["agent_pos"][0], state["agent_pos"][1], s=80, marker="x", label="agent")
-for obj in state["objects"]:
-    axes[0].scatter(obj["pos"][0], obj["pos"][1], s=80, marker="s", label=f"obj:{obj['id']}")
-
-for ox, oy in state["obstacles"]:
-    axes[0].scatter(ox, oy, s=50, marker="s", alpha=0.5)
-
-axes[0].set_title("Engine cells + Core grid world")
-axes[0].set_xlabel("x")
-axes[0].set_ylabel("y")
-axes[0].legend(loc="upper right", fontsize=8)
-
+# skeleton
 for bone in skeleton.bones.values():
     if not bone.exists:
         continue
-    axes[1].plot([bone.start[0], bone.end[0]], [bone.start[1], bone.end[1]], linewidth=3, color="black")
-    c = bone.center()
-    axes[1].scatter(c[0], c[1], s=15, color="black")
+    ax.plot(
+        [bone.start[0], bone.end[0]],
+        [bone.start[1], bone.end[1]],
+        linewidth=2,
+    )
 
-for m in muscles.muscles.values():
-    if not m.exists:
-        continue
-    o = m.origin_bone.center()
-    i = m.insertion_bone.center()
-    alpha = 0.2 + 0.8 * m.activation
-    color = "red" if m.active else "gray"
-    axes[1].plot([o[0], i[0]], [o[1], i[1]], color=color, alpha=alpha, linewidth=2)
+# object
+ax.scatter(obj.position[0], obj.position[1], s=80, marker="s")
 
-axes[1].set_title("Chassis skeleton + muscles")
-# Skeleton view (x,y)
-for bone in skeleton.bones.values():
-    if not bone.exists:
-        continue
-    xs = [bone.start[0], bone.end[0]]
-    ys = [bone.start[1], bone.end[1]]
-    axes[1].plot(xs, ys, linewidth=3)
-    c = bone.center()
-    axes[1].scatter(c[0], c[1], s=15)
+ax.set_xlim(-25, 25)
+ax.set_ylim(-5, 45)
+ax.grid(True, alpha=0.2)
 
-axes[1].set_title("Chassis skeleton")
-axes[1].set_xlabel("x")
-axes[1].set_ylabel("y")
-axes[1].set_xlim(-25, 25)
-axes[1].set_ylim(-5, 45)
-axes[1].grid(True, alpha=0.2)
 st.pyplot(fig)
+
 
 if auto_run:
-    time.sleep(0.15)
+    time.sleep(0.1)
     st.rerun()
-
-st.pyplot(fig)
