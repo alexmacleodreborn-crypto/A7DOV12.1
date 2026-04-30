@@ -45,6 +45,11 @@ def init_session():
     if "muscles" not in st.session_state:
         st.session_state.muscles = MuscularSystem(st.session_state.skeleton)
 
+    # Ensure bone masses are initialized before rigid bodies are constructed.
+    if not st.session_state.get("physics_initialized"):
+        st.session_state.skeleton.update(0.0)
+        st.session_state.physics_initialized = True
+
     if "physics" not in st.session_state:
         st.session_state.physics = PhysicsEngine(
             st.session_state.skeleton,
@@ -52,7 +57,9 @@ def init_session():
         )
 
     if "physical_object" not in st.session_state:
-        st.session_state.physical_object = Object("cube", [2.0, 2.0, 0.0], mass=1.2)
+        cube = next((o for o in st.session_state.state["objects"] if o["id"] == "cube"), None)
+        cube_pos = [2.0, 2.0, 0.0] if cube is None else [*cube["pos"], 0.0]
+        st.session_state.physical_object = Object("cube", cube_pos, mass=1.2)
 
     if "physical_interaction" not in st.session_state:
         itx = InteractionSystem(st.session_state.skeleton, st.session_state.muscles)
@@ -82,6 +89,22 @@ activate_muscles = col3.checkbox("Activate arm muscles", True)
 run = st.button("Run simulation")
 
 
+def sync_cube_state(state_dict, physical_cube):
+    cube = next((o for o in state_dict["objects"] if o["id"] == "cube"), None)
+    if cube is None:
+        return
+
+    # Core state drives logical hold status for action selection.
+    if state_dict.get("held_object") == "cube":
+        physical_cube.held = True
+    elif not cube.get("held", False):
+        physical_cube.held = False
+
+    # Chassis simulation drives physical pose reflected back into core state.
+    cube["held"] = physical_cube.held
+    cube["pos"] = physical_cube.position[:2].round(3).tolist()
+
+
 def run_cycle(dt_value: float):
     org.update(dt_value)
 
@@ -89,6 +112,8 @@ def run_cycle(dt_value: float):
     action, target = select_action(memory, state)
     success = bridge.execute(action, target, state)
     process_feedback(success, action, target, memory, state)
+
+    sync_cube_state(state, physical_obj)
 
     t = org.time * 10.0
     skeleton.update(t)
@@ -101,6 +126,8 @@ def run_cycle(dt_value: float):
 
     physical_obj.update(dt_value)
     physical_itx.update(state)
+
+    sync_cube_state(state, physical_obj)
 
     state["cycle"] += 1
     state["last_action_success"] = success
