@@ -4,6 +4,7 @@ from .muscle import Muscle
 from .muscle_registry import create_muscle_registry
 from .muscle_dynamics import apply_fatigue, atp_drain
 
+
 class MuscularSystem:
     def __init__(self, skeleton):
         self.skeleton = skeleton
@@ -15,18 +16,33 @@ class MuscularSystem:
         registry = create_muscle_registry(self.skeleton.bones)
 
         for m in registry:
+            origin_id = m["origin"]
+            insertion_id = m["insertion"]
+
+            # -----------------------------
+            # SAFE LOOKUP (CRITICAL FIX)
+            # -----------------------------
+            origin_bone = self.skeleton.bones.get(origin_id)
+            insertion_bone = self.skeleton.bones.get(insertion_id)
+
+            if origin_bone is None or insertion_bone is None:
+                print(f"[WARN] Muscle skipped: {m['id']} "
+                      f"(missing bone: {origin_id} or {insertion_id})")
+                continue
+
             muscle = Muscle(
                 muscle_id=m["id"],
                 name=m["name"],
-                origin_bone=self.skeleton.bones[m["origin"]],
-                insertion_bone=self.skeleton.bones[m["insertion"]],
+                origin_bone=origin_bone,
+                insertion_bone=insertion_bone,
                 max_force=m["max_force"],
                 development=m["dev"]
             )
+
             self.muscles[muscle.id] = muscle
 
     def update(self, t, state):
-        atp = state["atp"]
+        atp = state.get("atp", 0.0)
 
         total_force = 0.0
 
@@ -41,7 +57,9 @@ class MuscularSystem:
 
             apply_fatigue(m, force)
 
-        # ATP drain (connects to USV)
+        # -----------------------------
+        # ATP DRAIN (SAFE)
+        # -----------------------------
         state["atp"] -= atp_drain(total_force)
         state["atp"] = max(0.0, state["atp"])
 
