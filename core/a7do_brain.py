@@ -60,7 +60,7 @@ class A7DO:
         if action:
             target = self._get_target_position(action)
             if target is not None:
-                self.motor.set_target("right_hand", target)
+                self.motor.set_target("right_arm", target)
 
         # 🦾 6. motor execution
         self.motor.update(t, self.state)
