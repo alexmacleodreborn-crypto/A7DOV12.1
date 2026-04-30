@@ -1,5 +1,6 @@
 import copy
 import sys
+import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -34,6 +35,8 @@ st.title("A7DOV12.1 – Integrated Bio/Cognitive/Chassis Simulation")
 def init_session():
     if "organism" not in st.session_state:
         st.session_state.organism = Organism()
+    if "state" not in st.session_state:
+        st.session_state.state = copy.deepcopy(base_state)
 
     if "state" not in st.session_state:
         st.session_state.state = copy.deepcopy(base_state)
@@ -42,6 +45,16 @@ def init_session():
         m = Memory()
         m.get_or_create("self")
         st.session_state.memory = m
+    if "bridge" not in st.session_state:
+        st.session_state.bridge = CognitiveBridge(GridInteractionSystem())
+    if "skeleton" not in st.session_state:
+        st.session_state.skeleton = Skeleton()
+    if "muscles" not in st.session_state:
+        st.session_state.muscles = MuscularSystem(st.session_state.skeleton)
+    if "physics" not in st.session_state:
+        st.session_state.physics = PhysicsEngine(st.session_state.skeleton, st.session_state.muscles)
+    if "physical_object" not in st.session_state:
+        st.session_state.physical_object = Object("cube", [2.0, 2.0, 0.0], mass=1.2)
 
     if "bridge" not in st.session_state:
         st.session_state.bridge = CognitiveBridge(GridInteractionSystem())
@@ -81,6 +94,13 @@ physics = st.session_state.physics
 physical_obj = st.session_state.physical_object
 physical_itx = st.session_state.physical_interaction
 
+c1, c2, c3, c4 = st.columns(4)
+steps = c1.slider("Steps", 1, 60, 10)
+dt = c2.slider("dt", 0.01, 0.25, 0.1)
+activate_muscles = c3.checkbox("Activate arm muscles", True)
+auto_run = c4.checkbox("Auto run", True)
+
+run_once = st.button("Run simulation")
 col1, col2, col3 = st.columns(3)
 steps = col1.slider("Steps", 1, 60, 10)
 dt = col2.slider("dt", 0.01, 0.25, 0.1)
@@ -113,6 +133,51 @@ def run_cycle(dt_value: float):
     state["last_action_success"] = success
 
 
+if run_once or auto_run:
+    for _ in range(steps if run_once else 1):
+        run_cycle(dt)
+
+left, right = st.columns(2)
+with left:
+    st.subheader("Cognitive + organism state")
+    st.json({
+        "time": round(org.time, 2),
+        "cells": len(org.cells),
+        "agent_pos": state["agent_pos"],
+        "held_object": state.get("held_object"),
+        "coherence": round(state["coherence"], 3),
+        "atp": round(state["atp"], 3),
+        "cycle": state["cycle"],
+        "last_action_success": state["last_action_success"],
+        "current_intent": state.get("current_intent"),
+    })
+    st.write("Memory nodes:", list(memory.nodes.keys()))
+
+with right:
+    st.subheader("Skeleton + physics + muscles")
+    st.json({
+        "center_of_mass": state.get("center_of_mass"),
+        "stable": state.get("stable"),
+        "physical_object": {
+            "id": physical_obj.id,
+            "held": physical_obj.held,
+            "position": physical_obj.position.round(3).tolist(),
+        },
+        "chassis_action": physical_itx.active_action,
+    })
+    st.dataframe(muscles.export_state()["muscles"], use_container_width=True)
+
+st.subheader("Visualizations")
+fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+if org.cells:
+    cells = np.array([c.position for c in org.cells])
+    axes[0].scatter(cells[:, 0], cells[:, 1], s=6, alpha=0.25, label="cells")
+axes[0].scatter(state["agent_pos"][0], state["agent_pos"][1], s=80, marker="x", label="agent")
+for obj in state["objects"]:
+    axes[0].scatter(obj["pos"][0], obj["pos"][1], s=80, marker="s", label=f"obj:{obj['id']}")
+for ox, oy in state["obstacles"]:
+    axes[0].scatter(ox, oy, s=50, marker="s", alpha=0.5)
 if run:
     for _ in range(steps):
         run_cycle(dt)
@@ -174,6 +239,23 @@ axes[0].set_xlabel("x")
 axes[0].set_ylabel("y")
 axes[0].legend(loc="upper right", fontsize=8)
 
+for bone in skeleton.bones.values():
+    if not bone.exists:
+        continue
+    axes[1].plot([bone.start[0], bone.end[0]], [bone.start[1], bone.end[1]], linewidth=3, color="black")
+    c = bone.center()
+    axes[1].scatter(c[0], c[1], s=15, color="black")
+
+for m in muscles.muscles.values():
+    if not m.exists:
+        continue
+    o = m.origin_bone.center()
+    i = m.insertion_bone.center()
+    alpha = 0.2 + 0.8 * m.activation
+    color = "red" if m.active else "gray"
+    axes[1].plot([o[0], i[0]], [o[1], i[1]], color=color, alpha=alpha, linewidth=2)
+
+axes[1].set_title("Chassis skeleton + muscles")
 # Skeleton view (x,y)
 for bone in skeleton.bones.values():
     if not bone.exists:
@@ -190,5 +272,10 @@ axes[1].set_ylabel("y")
 axes[1].set_xlim(-25, 25)
 axes[1].set_ylim(-5, 45)
 axes[1].grid(True, alpha=0.2)
+st.pyplot(fig)
+
+if auto_run:
+    time.sleep(0.15)
+    st.rerun()
 
 st.pyplot(fig)
