@@ -2,53 +2,110 @@
 
 import numpy as np
 
-def distance(a, b):
-    return np.linalg.norm(np.array(a) - np.array(b))
-
-
-def move_towards(current, target):
-    current = np.array(current)
-    target = np.array(target)
-
-    direction = target - current
-
-    if np.linalg.norm(direction) < 0.01:
-        return current.tolist()
-
-    step = direction / np.linalg.norm(direction)
-    new_pos = current + step
-
-    return new_pos.round().astype(int).tolist()
-
 
 class InteractionSystem:
+    def __init__(self, skeleton, muscles):
+        self.executor = None
+        self.skeleton = skeleton
+        self.muscles = muscles
 
-    def execute(self, action, target, state):
+        self.objects = []
+        self.active_action = None
 
-        if action == "idle":
-            return False
+    def set_executor(self, executor):
+        self.executor = executor
 
-        obj = None
-        for o in state["objects"]:
-            if o["id"] == target:
-                obj = o
-                break
+    def add_object(self, obj):
+        self.objects.append(obj)
 
-        if obj is None:
-            return False
+    # -----------------------------
+    # CORE UPDATE
+    # -----------------------------
+    def update(self, state):
+        if not self.executor:
+            return
 
-        agent_pos = state["agent_pos"]
-        obj_pos = obj["pos"]
+        bodies = state.get("bodies", [])
+        if not bodies:
+            return
 
-        dist = distance(agent_pos, obj_pos)
+        # -----------------------------
+        # FIND HAND POSITION
+        # -----------------------------
+        hand_pos = self._get_hand_position()
 
-        # 🔥 MOVE FIRST
-        if dist > 1:
-            state["agent_pos"] = move_towards(agent_pos, obj_pos)
-            return False
+        # -----------------------------
+        # PROCESS OBJECT INTERACTIONS
+        # -----------------------------
+        held_any = False
 
-        # 🔥 INTERACT WHEN CLOSE
-        obj["held"] = True
-        state["atp"] -= 0.05
+        for obj in self.objects:
+            obj_pos = np.array(obj.position)
 
-        return True
+            distance = np.linalg.norm(hand_pos - obj_pos)
+
+            # -----------------------------
+            # CONTACT CHECK
+            # -----------------------------
+            contact = distance < 1.5
+
+            # -----------------------------
+            # GRIP FORCE
+            # -----------------------------
+            grip_force = self._compute_grip_force(state)
+
+            required_force = getattr(obj, "mass", 1.0) * 9.81 * 0.2
+
+            if contact and grip_force >= required_force:
+                obj.held = True
+                obj.position = hand_pos.copy()
+                held_any = True
+            else:
+                obj.held = False
+
+        # -----------------------------
+        # WRITE TO STATE (SINGLE SOURCE OF TRUTH)
+        # -----------------------------
+        if held_any:
+            for obj in self.objects:
+                if obj.held:
+                    state["held_object"] = obj.id
+                    break
+        else:
+            state["held_object"] = None
+
+        # -----------------------------
+        # OPTIONAL: expose physical objects
+        # -----------------------------
+        state["objects_physical"] = [
+            {
+                "id": obj.id,
+                "held": obj.held,
+                "position": obj.position.tolist()
+            }
+            for obj in self.objects
+        ]
+
+    # -----------------------------
+    # HELPERS
+    # -----------------------------
+    def _get_hand_position(self):
+        # try to find a hand bone
+        for bone in self.skeleton.bones.values():
+            if "hand" in bone.id.lower():
+                return bone.center()
+
+        # fallback
+        return np.array([0.0, 0.0, 0.0])
+
+    def _compute_grip_force(self, state):
+        total_force = 0.0
+
+        for m in self.muscles.muscles.values():
+            if not m.active:
+                continue
+
+            if "arm" in m.name or "bicep" in m.name or "forearm" in m.name:
+                total_force += m.compute_force(state.get("atp", 0.0))
+
+        return total_force
