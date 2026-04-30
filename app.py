@@ -31,7 +31,7 @@ from chassis.interaction_system import InteractionSystem
 
 
 st.set_page_config(page_title="A7DOV12.1", layout="wide")
-st.title("A7DOV12.1 – Integrated Simulation")
+st.title("A7DOV12.1 – 2D Growth System")
 
 
 # -------------------------
@@ -107,40 +107,39 @@ run_once = st.button("Run simulation")
 
 
 # -------------------------
-# MAIN LOOP
+# LOOP
 # -------------------------
 def run_cycle(dt):
-    # --- organism growth ---
+    # ENERGY FIX (CRITICAL)
+    state["atp"] = max(state.get("atp", 0.0), 0.3)
+
+    # organism
     org.update(dt)
 
-    # --- cognition ---
+    # cognition
     perceive(state, memory)
     action, target = select_action(memory, state)
     success = bridge.execute(action, target, state)
     process_feedback(success, action, target, memory, state)
 
-    # --- skeleton ---
+    # skeleton growth
     t = org.time * 10.0
     skeleton.update(t)
 
-    # --- muscles ---
+    # muscles
     if activate_muscles:
-        muscles.activate_group(["bicep_left", "bicep_right"], 0.65)
+        muscles.activate_group(["bicep_left", "bicep_right"], 0.6)
 
     muscles.update(t, state)
 
-    # --- physics (NOW DRIVES EVERYTHING) ---
+    # physics
     physics.update(dt, state)
 
-    # --- object ---
+    # object + interaction
     obj.update(dt)
-
-    # --- interaction (NOW HAS ACCESS TO PHYSICS) ---
     interaction.update(state)
 
-    # --- state ---
     state["cycle"] += 1
-    state["last_action_success"] = success
 
 
 # -------------------------
@@ -152,63 +151,42 @@ if run_once or auto_run:
 
 
 # -------------------------
-# OUTPUT
+# VISUAL (2D SKELETON)
 # -------------------------
-left, right = st.columns(2)
+fig, ax = plt.subplots(figsize=(6, 8))
 
-with left:
-    st.subheader("Cognitive + organism")
-    st.json({
-        "time": round(org.time, 2),
-        "cells": len(org.cells),
-        "agent_pos": state["agent_pos"],
-        "held_object": state.get("held_object"),
-        "coherence": round(state["coherence"], 3),
-        "atp": round(state["atp"], 3),
-        "cycle": state["cycle"],
-    })
-
-with right:
-    st.subheader("Physics")
-    st.json({
-        "center_of_mass": state.get("center_of_mass"),
-        "stable": state.get("stable"),
-        "object": {
-            "held": obj.held,
-            "position": obj.position.round(3).tolist(),
-        },
-        "action": interaction.active_action,
-    })
-
-
-# -------------------------
-# VISUAL
-# -------------------------
-fig, ax = plt.subplots(figsize=(6, 6))
-
-# cells
-if org.cells:
-    cells = np.array([c.position for c in org.cells])
-    ax.scatter(cells[:, 0], cells[:, 1], s=5, alpha=0.2)
-
-# skeleton
-for bone in skeleton.bones.values():
-    if not bone.exists:
-        continue
+for bone in skeleton.get_active_bones().values():
     ax.plot(
         [bone.start[0], bone.end[0]],
         [bone.start[1], bone.end[1]],
-        linewidth=2,
+        linewidth=3
     )
 
 # object
 ax.scatter(obj.position[0], obj.position[1], s=80, marker="s")
 
-ax.set_xlim(-25, 25)
-ax.set_ylim(-5, 45)
+# COM
+com = state.get("center_of_mass")
+if com:
+    ax.scatter(com[0], com[1], s=100, marker="x")
+
+ax.set_xlim(-10, 10)
+ax.set_ylim(-10, 20)
 ax.grid(True, alpha=0.2)
 
 st.pyplot(fig)
+
+
+# -------------------------
+# STATE VIEW
+# -------------------------
+st.json({
+    "time": round(org.time, 2),
+    "cells": len(org.cells),
+    "held_object": state.get("held_object"),
+    "center_of_mass": state.get("center_of_mass"),
+    "stable": state.get("stable"),
+})
 
 
 if auto_run:
