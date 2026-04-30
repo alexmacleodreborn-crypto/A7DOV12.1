@@ -39,6 +39,14 @@ class Bone:
         self.controllable = False
         self.load_bearing = False
 
+
+    def direction(self):
+        vec = self.end - self.start
+        norm = np.linalg.norm(vec)
+        if norm == 0:
+            return np.zeros(3)
+        return vec / norm
+
     def length(self):
         return np.linalg.norm(self.end - self.start)
 
