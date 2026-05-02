@@ -9,15 +9,15 @@ def perceive(state, memory):
 
     agent_pos = state["agent_pos"]
 
-    for obj in state["objects"]:
+    for obj in state["objects_physical"]:
         node = memory.get_or_create(obj["id"])
 
         # store distance (important for decision later)
-        dx = obj["pos"][0] - agent_pos[0]
-        dy = obj["pos"][1] - agent_pos[1]
+        dx = obj["position"][0] - agent_pos[0]
+        dy = obj["position"][1] - agent_pos[1]
 
         node.metadata = {
-            "pos": obj["pos"],
+            "pos": obj["position"],
             "distance": abs(dx) + abs(dy)
         }
 

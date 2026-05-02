@@ -48,7 +48,7 @@ class A7DO:
         self.organism.update(dt)
 
         # 👁 2. perception
-        perceived = perceive(self.state)
+        perceived = perceive(self.state, self.memory)
 
         # 🧠 3. memory
         self.memory.update(perceived)
@@ -72,7 +72,8 @@ class A7DO:
         self.interaction.update(self.state)
 
         # 🔁 9. feedback
-        process_feedback(self.state, self.memory)
+        success = self.motor.state.active  # or some check
+        process_feedback(success, action, self.state.get("target_object"), self.memory, self.state)
 
         # 🔋 10. energy recovery
         self.state["atp"] = min(1.0, self.state["atp"] + 0.01)

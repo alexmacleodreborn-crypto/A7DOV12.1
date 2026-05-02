@@ -54,3 +54,8 @@ class Memory:
     def decay(self):
         for node in self.nodes.values():
             node.voltage *= 0.99
+
+    def update(self, perceived):
+        self.decay()
+        for node in perceived:
+            node.voltage += 0.1

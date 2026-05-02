@@ -1,6 +1,7 @@
 # chassis/ik_solver.py
 
 import numpy as np
+from .kinematics import forward_kinematics
 
 def solve_ik(chain, target, iterations=10, alpha=0.1):
     """
