@@ -6,6 +6,7 @@ import numpy as np
 from core.a7do_brain import A7DO
 from chassis.skeleton import Skeleton
 from chassis.muscular_system import MuscularSystem
+from chassis.export_3d import SimulationExporter
 
 
 # -----------------------------
@@ -84,6 +85,17 @@ brain.state["objects_physical"] = [
 ]
 
 # -----------------------------
+# EXPORTER
+# -----------------------------
+exporter = SimulationExporter(
+    output_path="exports/sim_export.json",
+    format_name="json",
+    include_com=True,
+    include_physics=True,
+    snapshot_interval=0.5,
+)
+
+# -----------------------------
 # MAIN LOOP
 # -----------------------------
 cycle = 0
@@ -105,6 +117,10 @@ while True:
         print_action(brain.selector.last_action)
 
     print_objects(brain.state)
+
+    sim_time = brain.state.get("time", 0.0)
+    if exporter.should_snapshot(sim_time):
+        exporter.capture(sim_time, skeleton, muscles, brain.state)
 
     if hasattr(brain, "memory"):
         print_memory(brain.memory)
