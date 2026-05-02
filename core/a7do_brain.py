@@ -47,6 +47,13 @@ class A7DO:
         # 🧬 1. growth
         self.organism.update(dt)
 
+        # 🦴 1b. body development + muscle dynamics
+        # Keep the physical body in sync with biological time before perception,
+        # motor execution, and physics use the skeleton/muscle state.
+        if self.motor is not None:
+            self.motor.skeleton.update(t)
+            self.motor.muscles.update(t, self.state)
+
         # 👁 2. perception
         perceived = perceive(self.state, self.memory)
 
@@ -57,13 +64,19 @@ class A7DO:
         action = self.selector.select(self.memory, self.state)
 
         # 🎯 5. convert action → motor target
-        if action:
+        # Manual dashboard commands get priority so a user-sent limb target is
+        # not immediately overwritten by autonomous reach/inspect decisions.
+        manual_override = bool(self.state.get("manual_motor_override"))
+        if action and not manual_override:
             target = self._get_target_position(action)
             if target is not None:
                 self.motor.set_target("right_arm", target)
 
         # 🦾 6. motor execution
         self.motor.update(t, self.state)
+
+        if manual_override and not self.motor.state.active:
+            self.state["manual_motor_override"] = False
 
         # ⚙️ 7. physics
         self.physics.update(dt, self.state)
