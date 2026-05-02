@@ -79,61 +79,51 @@ def motor_summary(motor):
 
 
 def build_body_figure(brain):
-    skeleton = brain.motor.skeleton
-    muscles = brain.motor.muscles
-
     fig = go.Figure()
+    skeleton = brain.motor.skeleton
 
     # bones
     for bone in skeleton.get_active_bones().values():
-        x = [bone.start[0], bone.end[0]]
-        y = [bone.start[1], bone.end[1]]
-        z = [bone.start[2], bone.end[2]]
-        color = "black" if bone.exists else "gray"
-        width = 6 if bone.load_bearing else 3
         fig.add_trace(
             go.Scatter3d(
-                x=x,
-                y=y,
-                z=z,
+                x=[bone.start[0], bone.end[0]],
+                y=[bone.start[1], bone.end[1]],
+                z=[bone.start[2], bone.end[2]],
                 mode="lines+markers",
-                line=dict(color=color, width=width),
-                marker=dict(size=4, color=color),
+                line=dict(color="royalblue", width=8),
+                marker=dict(size=4, color="royalblue"),
                 name=f"Bone: {bone.name}",
-                hovertemplate=f"{bone.name}<br>mass: {bone.mass:.2f}" ,
-            )
-        )
-
-    # muscles
-    for muscle in muscles.muscles.values():
-        if not muscle.exists:
-            continue
-
-        origin = muscle.origin_bone.center()
-        insertion = muscle.insertion_bone.center()
-        active_color = "red" if muscle.active else "blue"
-        active_width = 4 if muscle.active else 2
-        opacity = 0.9 if muscle.active else 0.4
-
-        fig.add_trace(
-            go.Scatter3d(
-                x=[origin[0], insertion[0]],
-                y=[origin[1], insertion[1]],
-                z=[origin[2], insertion[2]],
-                mode="lines",
-                line=dict(color=active_color, width=active_width),
-                opacity=opacity,
-                name=f"Muscle: {muscle.name}",
-                hovertemplate=(
-                    f"{muscle.name}<br>active: {muscle.active}" \
-                    f"<br>activation: {muscle.activation:.2f}" \
-                    f"<br>fatigue: {muscle.fatigue:.2f}"
-                ),
+                hovertext=[bone.name, bone.name],
                 showlegend=False,
             )
         )
 
-    # object markers
+    # muscle lines
+    for muscle in brain.motor.muscles.muscles.values():
+        if not muscle.exists:
+            continue
+
+        origin = muscle.origin_bone.center()
+        insert = muscle.insertion_bone.center()
+        activation = float(muscle.activation)
+        color = f"rgb({int(255 * activation)}, 50, {int(255 * (1 - activation))})"
+        width = 3 + activation * 8
+
+        fig.add_trace(
+            go.Scatter3d(
+                x=[origin[0], insert[0]],
+                y=[origin[1], insert[1]],
+                z=[origin[2], insert[2]],
+                mode="lines+markers",
+                line=dict(color=color, width=width),
+                marker=dict(size=3, color=color),
+                name=f"Muscle: {muscle.name}",
+                hovertext=[muscle.name, muscle.name],
+                showlegend=False,
+            )
+        )
+
+    # objects
     for obj in brain.state.get("objects_physical", []):
         pos = obj["position"]
         fig.add_trace(
@@ -142,7 +132,7 @@ def build_body_figure(brain):
                 y=[pos[1]],
                 z=[pos[2]],
                 mode="markers+text",
-                marker=dict(size=8, symbol="diamond", color="green"),
+                marker=dict(size=6, color="orange" if obj["held"] else "green"),
                 text=[obj["id"]],
                 textposition="top center",
                 name=f"Object: {obj['id']}",
@@ -150,15 +140,32 @@ def build_body_figure(brain):
             )
         )
 
+    # current motor target
+    if brain.motor.state.target_position is not None:
+        target = brain.motor.state.target_position
+        fig.add_trace(
+            go.Scatter3d(
+                x=[target[0]],
+                y=[target[1]],
+                z=[target[2]],
+                mode="markers+text",
+                marker=dict(size=8, color="red", symbol="x"),
+                text=["Target"],
+                textposition="bottom center",
+                name="Target",
+                showlegend=False,
+            )
+        )
+
     fig.update_layout(
         scene=dict(
-            xaxis=dict(title="X", backgroundcolor="rgb(230, 230, 230)"),
-            yaxis=dict(title="Y", backgroundcolor="rgb(230, 230, 230)"),
-            zaxis=dict(title="Z", backgroundcolor="rgb(230, 230, 230)"),
-            aspectmode="cube",
+            xaxis_title="X",
+            yaxis_title="Y",
+            zaxis_title="Z",
+            aspectmode="data",
         ),
-        margin=dict(l=0, r=0, b=0, t=0),
-        legend=dict(font=dict(size=10)),
+        margin=dict(l=0, r=0, b=0, t=20),
+        height=700,
     )
 
     return fig
@@ -234,7 +241,7 @@ def main():
     st.subheader("Motor State")
     st.json(motor_summary(brain.motor))
 
-    st.subheader("3D Body Visualization")
+    st.subheader("3D Body View")
     st.plotly_chart(build_body_figure(brain), use_container_width=True)
 
     st.subheader("Debug Output")
@@ -254,7 +261,7 @@ def main():
     })
 
     st.caption(
-        "This Streamlit view shows the full A7DO system state, including perception, memory, motor target, and current world objects."
+        "This Streamlit view shows the full A7DO system state, including perception, memory, motor target, current world objects, and a 3D bone/muscle body representation."
     )
 
 
