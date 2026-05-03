@@ -1,132 +1,125 @@
-# app.py
-
+import streamlit as st
 import time
 
 from chassis.physics_engine import PhysicsEngine
 from chassis.interaction_system import InteractionSystem
 from chassis.action_executor import ActionExecutor
 from chassis.motor_controller import MotorController
-
-# you already have these
 from chassis.growth import global_structural_growth
 
 
 # -------------------------
-# MOCK / BRIDGE OBJECTS
-# (replace with your real loaders later)
+# DUMMY STRUCTURES (replace later)
 # -------------------------
 
 class DummySkeleton:
-    def __init__(self, bones):
-        self.bones = bones
-
+    def __init__(self):
+        self.bones = {}
 
 class DummyMuscles:
-    def __init__(self, muscles):
-        self.muscles = muscles
+    def __init__(self):
+        self.muscles = {}
 
 
 # -------------------------
-# MAIN ORGANISM
+# SYSTEM INIT (persisted)
 # -------------------------
 
-class A7DO:
-    def __init__(self, skeleton, muscles):
+if "system" not in st.session_state:
 
-        self.skeleton = skeleton
-        self.muscles = muscles
+    skeleton = DummySkeleton()
+    muscles = DummyMuscles()
 
-        # systems
-        self.physics = PhysicsEngine(skeleton, muscles)
-        self.interaction = InteractionSystem(skeleton, muscles)
-        self.executor = ActionExecutor(skeleton, muscles)
-        self.motor = MotorController(skeleton, muscles)
-
-        self.interaction.set_executor(self.executor)
-
-        # unified state
-        self.state = {
+    system = {
+        "skeleton": skeleton,
+        "muscles": muscles,
+        "physics": PhysicsEngine(skeleton, muscles),
+        "interaction": InteractionSystem(skeleton, muscles),
+        "executor": ActionExecutor(skeleton, muscles),
+        "motor": MotorController(skeleton, muscles),
+        "state": {
             "t": 0.0,
             "dt": 0.1,
             "atp": 1.0,
             "held_object": None,
         }
+    }
 
-    # -------------------------
-    # MAIN LOOP STEP
-    # -------------------------
-    def update(self):
+    system["interaction"].set_executor(system["executor"])
 
-        t = self.state["t"]
-        dt = self.state["dt"]
+    st.session_state.system = system
 
-        # -------------------------
-        # 1. DEVELOPMENT (bones + muscles)
-        # -------------------------
-        global_scale = global_structural_growth(t)
 
-        for bone in self.skeleton.bones.values():
-            bone.update(t, global_scale)
-
-        for muscle in self.muscles.muscles.values():
-            muscle.update(t, self.state["atp"])
-
-        # -------------------------
-        # 2. MOTOR CONTROL (optional target)
-        # -------------------------
-        self.motor.update(t, self.state)
-
-        # -------------------------
-        # 3. PHYSICS
-        # -------------------------
-        self.physics.update(dt, self.state)
-
-        # -------------------------
-        # 4. INTERACTION
-        # -------------------------
-        self.interaction.update(self.state)
-
-        # -------------------------
-        # 5. ENERGY RECOVERY
-        # -------------------------
-        self.state["atp"] = min(1.0, self.state["atp"] + 0.01)
-
-        # -------------------------
-        # 6. TIME
-        # -------------------------
-        self.state["t"] += dt
-
-    # -------------------------
-    # RUN LOOP
-    # -------------------------
-    def run(self):
-
-        while True:
-            self.update()
-
-            print(f"\nTime: {round(self.state['t'],2)}")
-            print(f"ATP: {round(self.state['atp'],2)}")
-            print(f"Held: {self.state.get('held_object')}")
-
-            time.sleep(0.05)
+system = st.session_state.system
 
 
 # -------------------------
-# ENTRY POINT
+# UPDATE STEP
 # -------------------------
 
-def build_system():
-    """
-    You will replace this with your actual skeleton/muscle builder
-    """
+def step(system):
+    state = system["state"]
+    t = state["t"]
+    dt = state["dt"]
 
-    # TEMP: empty placeholders so system runs
-    skeleton = DummySkeleton(bones={})
-    muscles = DummyMuscles(muscles={})
+    # DEVELOPMENT
+    scale = global_structural_growth(t)
 
-    return A7DO(skeleton, muscles)
+    for bone in system["skeleton"].bones.values():
+        bone.update(t, scale)
+
+    for muscle in system["muscles"].muscles.values():
+        muscle.update(t, state["atp"])
+
+    # MOTOR
+    system["motor"].update(t, state)
+
+    # PHYSICS
+    system["physics"].update(dt, state)
+
+    # INTERACTION
+    system["interaction"].update(state)
+
+    # ENERGY
+    state["atp"] = min(1.0, state["atp"] + 0.01)
+
+    # TIME
+    state["t"] += dt
 
 
-if __name__ == "__main__":
-    system = build_system()
-    system.run()
+# -------------------------
+# UI
+# -------------------------
+
+st.title("A7DO Organism")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("Step"):
+        step(system)
+
+with col2:
+    auto = st.toggle("Auto Run", value=False)
+
+
+# AUTO LOOP (controlled)
+if auto:
+    step(system)
+    time.sleep(0.05)
+    st.rerun()
+
+
+# -------------------------
+# DISPLAY STATE
+# -------------------------
+
+state = system["state"]
+
+st.subheader("State")
+
+st.write({
+    "time": round(state["t"], 2),
+    "atp": round(state["atp"], 2),
+    "held_object": state["held_object"]
+})
