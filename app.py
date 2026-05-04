@@ -1,201 +1,102 @@
-import streamlit as st
 import time
-import numpy as np
+import streamlit as st
 import matplotlib.pyplot as plt
 
-# A7DO SYSTEMS
-from chassis.bone import Bone
-from chassis.growth import early, global_structural_growth
-from chassis.physics_engine import PhysicsEngine
-from chassis.interaction_system import InteractionSystem
-from chassis.action_executor import ActionExecutor
-from chassis.motor_controller import MotorController
+from engine.life_system import LifeSystem
 
 
-# -------------------------
-# BUILD SKELETON (REAL BASE)
-# -------------------------
-
-def build_skeleton():
-
-    bones = {}
-
-    bones["spine"] = Bone(
-        "spine",
-        None,
-        [0, 0, 0],
-        [0, 1, 0],
-        {"t_start": 0, "growth": early}
-    )
-
-    bones["neck"] = Bone(
-        "neck",
-        "spine",
-        [0, 1, 0],
-        [0, 1.3, 0],
-        {"t_start": 2, "growth": early}
-    )
-
-    bones["head"] = Bone(
-        "head",
-        "neck",
-        [0, 1.3, 0],
-        [0, 1.6, 0],
-        {"t_start": 3, "growth": early}
-    )
-
-    bones["left_arm"] = Bone(
-        "left_arm",
-        "spine",
-        [0, 0.9, 0],
-        [-0.5, 1.2, 0],
-        {"t_start": 4, "growth": early}
-    )
-
-    bones["right_arm"] = Bone(
-        "right_arm",
-        "spine",
-        [0, 0.9, 0],
-        [0.5, 1.2, 0],
-        {"t_start": 4, "growth": early}
-    )
-
-    class Skeleton:
-        def __init__(self, bones):
-            self.bones = bones
-
-    return Skeleton(bones)
+st.set_page_config(page_title="A7DO Layered Dashboard", layout="wide")
+st.title("A7DO — Layer 01 → Layer 10 Connected Dashboard")
 
 
-# -------------------------
-# RENDER SKELETON
-# -------------------------
+def ensure_system():
+    if "life_system" not in st.session_state:
+        st.session_state.life_system = LifeSystem()
+    return st.session_state.life_system
 
-def render_skeleton(skeleton):
+
+def render_skeleton(state):
     fig, ax = plt.subplots()
-
-    for bone in skeleton.bones.values():
-        if not bone.exists:
+    for bone in state.get("bones", []):
+        if not bone.get("exists"):
             continue
-
-        x = [bone.start[0], bone.end[0]]
-        y = [bone.start[1], bone.end[1]]
-
+        x = [bone["start"][0], bone["end"][0]]
+        y = [bone["start"][1], bone["end"][1]]
         ax.plot(x, y)
-
-    ax.set_title("A7DO Skeleton")
+    ax.set_title("Layer 01: Skeletal Chassis")
     ax.set_aspect("equal")
     ax.set_xlim(-2, 2)
-    ax.set_ylim(0, 2)
-
+    ax.set_ylim(-0.5, 2.5)
     return fig
 
 
-# -------------------------
-# INIT SYSTEM (PERSISTENT)
-# -------------------------
-
-if "system" not in st.session_state:
-
-    skeleton = build_skeleton()
-
-    system = {
-        "skeleton": skeleton,
-        "physics": PhysicsEngine(skeleton, None),
-        "interaction": InteractionSystem(skeleton, None),
-        "executor": ActionExecutor(skeleton, None),
-        "motor": MotorController(skeleton, None),
-        "state": {
-            "t": 0.0,
-            "dt": 0.1,
-            "atp": 1.0,
-            "held_object": None,
-        }
+def layer_connected(state):
+    return {
+        "Layer 01 — Skeletal Chassis": bool(state.get("bones")),
+        "Layer 02 — Muscular Actuators": bool(state.get("muscles")),
+        "Layer 03 — Kinematics & Dynamics": bool(state.get("bones")) and bool(state.get("muscles")),
+        "Layer 04 — Reflex Hierarchy": bool(state.get("last_action")) or bool(state.get("motor_active")),
+        "Layer 05 — Visceral Metabolism": state.get("atp") is not None,
+        "Layer 06 — Sensory Array": "objects_physical" in state,
+        "Layer 07 — Growth & State Adaptation": state.get("cells", 0) > 0,
+        "Layer 08 — Morphological Sync": bool(state.get("center_of_mass")) and bool(state.get("bones")),
+        "Layer 09 — Vocal & Acoustic Sync": state.get("phase") == "infant",
+        "Layer 10 — Cognitive Archive": state.get("memory_nodes", 0) > 0,
     }
 
-    system["interaction"].set_executor(system["executor"])
 
-    st.session_state.system = system
+system = ensure_system()
 
-
-system = st.session_state.system
-
-
-# -------------------------
-# UPDATE STEP
-# -------------------------
-
-def step(system):
-
-    state = system["state"]
-    t = state["t"]
-    dt = state["dt"]
-
-    # DEVELOPMENT (bone growth)
-    scale = global_structural_growth(t)
-
-    for bone in system["skeleton"].bones.values():
-        bone.update(t, scale)
-
-    # MOTOR (placeholder)
-    system["motor"].update(t, state)
-
-    # PHYSICS
-    system["physics"].update(dt, state)
-
-    # INTERACTION
-    system["interaction"].update(state)
-
-    # ENERGY
-    state["atp"] = min(1.0, state["atp"] + 0.01)
-
-    # TIME
-    state["t"] += dt
-
-
-# -------------------------
-# UI
-# -------------------------
-
-st.title("A7DO — Embryo → Organism")
-
-col1, col2 = st.columns(2)
-
+col1, col2, col3 = st.columns([1, 1, 2])
 with col1:
     if st.button("Step"):
-        step(system)
-
+        system.step_cycle()
 with col2:
     auto = st.toggle("Auto Run", value=False)
+with col3:
+    dt = st.slider("Step size", min_value=0.01, max_value=0.5, value=0.1, step=0.01)
 
-
-# AUTO LOOP
 if auto:
-    step(system)
+    system.update(dt)
     time.sleep(0.05)
     st.rerun()
 
+state = system.get_state()
 
-# -------------------------
-# DISPLAY STATE
-# -------------------------
+st.subheader("Global State")
+st.json(
+    {
+        "time": round(state.get("time", 0.0), 2),
+        "phase": state.get("phase"),
+        "heartbeat": round(state.get("heartbeat", 0.0), 2),
+        "maternal_heartbeat": state.get("maternal_heartbeat"),
+        "cells": state.get("cells"),
+        "bones": len(state.get("bones", [])),
+        "muscles": len(state.get("muscles", [])),
+        "memory_nodes": state.get("memory_nodes", 0),
+        "atp": round(state.get("atp", 0.0), 3),
+        "coherence": round(state.get("coherence", 0.0), 3),
+        "last_action": state.get("last_action"),
+    }
+)
 
-state = system["state"]
+st.subheader("Layer Connectivity (01 → 10)")
+connect = layer_connected(state)
+for layer_name, ok in connect.items():
+    st.write(f"{'✅' if ok else '⚪'} {layer_name}")
 
-st.subheader("State")
-
-st.write({
-    "time": round(state["t"], 2),
-    "atp": round(state["atp"], 2),
-    "held_object": state["held_object"]
-})
-
-
-# -------------------------
-# DISPLAY SKELETON
-# -------------------------
-
-st.subheader("Skeleton")
-
-fig = render_skeleton(system["skeleton"])
-st.pyplot(fig)
+left, right = st.columns([2, 1])
+with left:
+    st.subheader("Body Structure")
+    st.pyplot(render_skeleton(state))
+with right:
+    st.subheader("Center of Mass")
+    st.write(state.get("center_of_mass"))
+    st.subheader("Targeting")
+    st.write(
+        {
+            "target_object": state.get("target_object"),
+            "held_object": state.get("held_object"),
+            "motor_active": state.get("motor_active"),
+        }
+    )
