@@ -19,58 +19,93 @@ class PhysicsEngine:
         self._build_bodies()
 
     def _build_bodies(self):
+        self.bodies = []
         for bone in self.skeleton.bones.values():
             self.bodies.append(RigidBody(bone))
 
     def update(self, dt, state):
-        total_force = 0
-
+        # -----------------------------
+        # RESET FORCES (CRITICAL FIX)
+        # -----------------------------
         for body in self.bodies:
-            # gravity
-            gravity_force = GRAVITY * body.mass
-            body.apply_force(gravity_force)
+            if hasattr(body, "reset_forces"):
+                body.reset_forces()
+            else:
+                body.force = np.zeros(3)
 
-        # apply muscle forces
+        # -----------------------------
+        # APPLY GRAVITY
+        # -----------------------------
+        for body in self.bodies:
+            body.apply_force(GRAVITY * body.mass)
+
+        # -----------------------------
+        # APPLY MUSCLE FORCES (FIXED)
+        # -----------------------------
         for m in self.muscles.muscles.values():
             if not m.active:
                 continue
 
-            force = m.compute_force(state["atp"])
-            total_force += force
+            force = m.compute_force(state.get("atp", 1.0))
 
             direction = (
                 m.insertion_bone.center() -
                 m.origin_bone.center()
             )
 
-            if np.linalg.norm(direction) > 0:
-                direction = direction / np.linalg.norm(direction)
+            norm = np.linalg.norm(direction)
+            if norm == 0:
+                continue
+
+            direction = direction / norm
 
             for body in self.bodies:
                 if body.bone == m.insertion_bone:
                     body.apply_force(direction * force)
 
-        # integrate
+                elif body.bone == m.origin_bone:
+                    body.apply_force(-direction * force)
+
+        # -----------------------------
+        # INTEGRATE MOTION
+        # -----------------------------
         step(self.bodies, dt)
 
-        # collisions
+        # -----------------------------
+        # SYNC BACK TO SKELETON (CRITICAL FIX)
+        # -----------------------------
+        for body in self.bodies:
+            body.bone.position = body.position
+
+        # -----------------------------
+        # COLLISIONS
+        # -----------------------------
         for body in self.bodies:
             handle_ground_collision(body)
 
-        # balance check
+        # -----------------------------
+        # CENTER OF MASS + STABILITY
+        # -----------------------------
         com = compute_center_of_mass(self.bodies)
 
+        # safer foot detection
         feet = [
             b.position for b in self.bodies
-            if "leg" in b.bone.id or "foot" in b.bone.id
+            if getattr(b.bone, "is_support", False)
+            or "foot" in b.bone.id.lower()
+            or "leg" in b.bone.id.lower()
         ]
 
+        stable = False
         if len(feet) > 0:
             support = support_polygon(feet)
             stable = is_stable(com, support)
-        else:
-            stable = False
 
-        # write to USV
+        # -----------------------------
+        # WRITE TO STATE (USV)
+        # -----------------------------
         state["center_of_mass"] = com.tolist()
         state["stable"] = stable
+
+        # 🔥 expose bodies to other systems (VERY IMPORTANT)
+        state["bodies"] = self.bodies
