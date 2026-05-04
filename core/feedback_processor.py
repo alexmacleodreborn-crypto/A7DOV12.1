@@ -15,7 +15,10 @@ def process_feedback(success, action, target, memory, state):
 
     else:
         # penalise failure
-        if target in node.links:
-            node.links[target] *= 1.1
+        self_node = memory.get_or_create("self")
+        if target in self_node.links:
+            self_node.links[target] *= 1.1
+        if "self" in node.links:
+            node.links["self"] *= 1.1
 
         state["coherence"] *= 0.98
