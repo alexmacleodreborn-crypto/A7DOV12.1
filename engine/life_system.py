@@ -7,9 +7,9 @@ Coordinates all engines through developmental phases
 
 import numpy as np
 from .organism import Organism
-from ..chassis.skeleton import Skeleton
-from ..chassis.muscular_system import MuscularSystem
-from ..core.a7do_brain import A7DO
+from chassis.skeleton import Skeleton
+from chassis.muscular_system import MuscularSystem
+from core.a7do_brain import A7DO
 
 
 class LifeSystem:
